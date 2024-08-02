@@ -5,31 +5,70 @@ using UnityEngine;
 using Newtonsoft.Json;
 using Unity.VisualScripting;
 using UnityEngine.Networking;
-using System.Threading.Tasks;
+using Cysharp.Threading;
+using System.IO;
+using Cysharp.Threading.Tasks;
 
 public class EventService : MonoBehaviour
 {
     [SerializeField] private string serverUrl;
     [SerializeField] private float cooldownBeforeSend = 3f;
+    [SerializeField] private string filePath = "events.json";
 
     private List<EventInfo> eventsBuffer;
     private EventsWrapper eventsWrapper;
 
     private bool isCooldown = false;
 
-    private async void Start(){
-        eventsBuffer = new List<EventInfo>();
-        eventsWrapper = new EventsWrapper();
-        eventsWrapper.Events = eventsBuffer;
+    private string persistentDataPath;
 
-        TrackEvent("level_start", "level:3");
-        TrackEvent("level_start", "level:2");
-        
-        Debug.Log(ParseEventsToJson());
-        await SendEvents();
+    public void TrackEvent(string type, string data)
+    {
+        eventsBuffer.Add(new EventInfo(type, data));
+        CoolDownAndSend();
     }
 
-    private async Task SendEvents(){
+    private void Start(){
+        persistentDataPath = Path.Combine(Application.persistentDataPath, filePath);
+        LoadEventsFromFile();
+        if(eventsBuffer == null){
+            eventsBuffer = new List<EventInfo>();
+        }
+        eventsWrapper = new EventsWrapper();
+        eventsWrapper.Events = eventsBuffer;
+    }
+
+    private void OnApplicationPause(bool pauseStatus)
+    {
+        if (pauseStatus)
+        {
+            SaveEventsToFile();
+        }
+    }
+
+    private void LoadEventsFromFile(){
+        if(File.Exists(persistentDataPath)){
+            string json = File.ReadAllText(persistentDataPath);
+            eventsBuffer = JsonConvert.DeserializeObject<List<EventInfo>>(json);
+        }
+    }
+
+    private void SaveEventsToFile(){
+        string json = JsonConvert.SerializeObject(eventsBuffer, Formatting.Indented);
+        try{
+            File.WriteAllText(persistentDataPath, json);
+        }
+        catch{
+            Debug.LogError("Failed to save events to file");
+        }
+    }
+
+    private void OnDestroy() {
+        SaveEventsToFile();
+    }
+
+
+    private async UniTask SendEvents(){
         string json = ParseEventsToJson();
         
         UnityWebRequest request = new UnityWebRequest(serverUrl, "POST");
@@ -41,26 +80,29 @@ public class EventService : MonoBehaviour
         UnityWebRequestAsyncOperation operation = request.SendWebRequest();
         
         while (!operation.isDone){
-            await Task.Yield();
+            await UniTask.NextFrame();
         }
 
         if(request.result == UnityWebRequest.Result.Success){
-            Debug.Log("Success");
-            // clear all the stuff
             eventsBuffer.Clear();
+            File.Delete(persistentDataPath);
         }
         else{
-            Debug.Log("Error");
-            // handle error
+            SaveEventsToFile();
         }
     }
 
     private async void CoolDownAndSend(){
         if(isCooldown) return;
         isCooldown = true;
-        await Task.Delay((int)(cooldownBeforeSend * 1000));
-        await SendEvents();
-        isCooldown = false;
+        try
+        {
+            await UniTask.WaitForSeconds(cooldownBeforeSend);
+            await SendEvents();
+        }
+        finally{
+            isCooldown = false;
+        }
     }
 
     private string ParseEventsToJson(){
@@ -74,10 +116,7 @@ public class EventService : MonoBehaviour
         return json;
     }
 
-    public void TrackEvent(string type, string data){
-        eventsBuffer.Add(new EventInfo(type, data));
-        CoolDownAndSend();
-    }
+    
 }
 
 public class EventsWrapper{
@@ -92,6 +131,7 @@ public class EventsWrapper{
     }
 }
 
+[Serializable]
 public struct EventInfo
 {
     private readonly string type;

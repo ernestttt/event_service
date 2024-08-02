@@ -252,4 +252,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   serverUrl: www.google.com
-  cooldownBeforeSend: 0
+  cooldownBeforeSend: 3
+  filePath: events.json
