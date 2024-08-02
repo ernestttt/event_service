@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using Newtonsoft.Json;
 using Unity.VisualScripting;
+using UnityEngine.Networking;
+using System.Threading.Tasks;
 
 public class EventService : MonoBehaviour
 {
@@ -24,6 +26,7 @@ public class EventService : MonoBehaviour
         TrackEvent("level_start", "level:2");
         
         Debug.Log(ParseEventsToJson());
+        SendEvents();
     }
 
     private void Update(){
@@ -31,7 +34,29 @@ public class EventService : MonoBehaviour
     }
 
     private async void SendEvents(){
+        string json = ParseEventsToJson();
+        
+        UnityWebRequest request = new UnityWebRequest(serverUrl, "POST");
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(json);
+        request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        request.downloadHandler = new DownloadHandlerBuffer();
+        request.SetRequestHeader("Content-Type", "application/json");
+        
+        UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+        
+        while (!operation.isDone){
+            await Task.Yield();
+        }
 
+        if(request.result == UnityWebRequest.Result.Success){
+            eventsBuffer.Clear();
+            Debug.Log("Success");
+            // clear all the stuff
+        }
+        else{
+            Debug.Log("Error");
+            // handle error
+        }
     }
 
     private string ParseEventsToJson(){
