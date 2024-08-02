@@ -10,14 +10,14 @@ using System.Threading.Tasks;
 public class EventService : MonoBehaviour
 {
     [SerializeField] private string serverUrl;
-    [SerializeField] private float cooldownBeforeSend;
+    [SerializeField] private float cooldownBeforeSend = 3f;
 
     private List<EventInfo> eventsBuffer;
     private EventsWrapper eventsWrapper;
 
-    private float nextTime = 0;
+    private bool isCooldown = false;
 
-    private void Start(){
+    private async void Start(){
         eventsBuffer = new List<EventInfo>();
         eventsWrapper = new EventsWrapper();
         eventsWrapper.Events = eventsBuffer;
@@ -26,14 +26,10 @@ public class EventService : MonoBehaviour
         TrackEvent("level_start", "level:2");
         
         Debug.Log(ParseEventsToJson());
-        SendEvents();
+        await SendEvents();
     }
 
-    private void Update(){
-
-    }
-
-    private async void SendEvents(){
+    private async Task SendEvents(){
         string json = ParseEventsToJson();
         
         UnityWebRequest request = new UnityWebRequest(serverUrl, "POST");
@@ -49,14 +45,22 @@ public class EventService : MonoBehaviour
         }
 
         if(request.result == UnityWebRequest.Result.Success){
-            eventsBuffer.Clear();
             Debug.Log("Success");
             // clear all the stuff
+            eventsBuffer.Clear();
         }
         else{
             Debug.Log("Error");
             // handle error
         }
+    }
+
+    private async void CoolDownAndSend(){
+        if(isCooldown) return;
+        isCooldown = true;
+        await Task.Delay((int)(cooldownBeforeSend * 1000));
+        await SendEvents();
+        isCooldown = false;
     }
 
     private string ParseEventsToJson(){
@@ -72,6 +76,7 @@ public class EventService : MonoBehaviour
 
     public void TrackEvent(string type, string data){
         eventsBuffer.Add(new EventInfo(type, data));
+        CoolDownAndSend();
     }
 }
 
